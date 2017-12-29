@@ -20,7 +20,7 @@ bl_info = {
     "name": "Import Poliigon Texture",
     "author": "Tristen Georgiou",
     "version": (1, 0, 0),
-    "blender": (2, 78, 0),
+    "blender": (2, 79, 0),
     "location": "File > Import > Poliigon Texture",
     "description": "Imports textures from Poliigon (https://www.poliigon.com)",
     "warning": "",
@@ -125,40 +125,32 @@ def create_poliigon_material(path):
             tex = node_tree.nodes.new('ShaderNodeTexImage')
             tex.image = images[img_type]
             tex.label = img_type
-            tex.color_space = 'NONE' if img_type not in ['COL', 'AO'] else 'COLOR'
+            tex.color_space = \
+                'NONE' if img_type not in ['COL', 'AO'] else 'COLOR'
             texture_nodes[img_type] = tex
 
-    # create mix shader
-    mix_shader = node_tree.nodes.new('ShaderNodeMixShader')
-    node_tree.links.new(out_node.inputs[0], mix_shader.outputs[0])
-    node_tree.links.new(texture_nodes['REFL'].outputs[0], mix_shader.inputs[0])
-    
-    # create diffuse node
-    bsdf_diffuse = node_tree.nodes.new('ShaderNodeBsdfDiffuse')
-    
-    # create nodes for ambient occlusion, if it exists
-    if 'AO' in texture_nodes:
-        mix_rgb = node_tree.nodes.new('ShaderNodeMixRGB')
-        mix_rgb.blend_type = 'MULTIPLY'
-        mix_rgb.inputs[0].default_value = 0.8
-        node_tree.links.new(mix_rgb.inputs[1], texture_nodes['COL'].outputs[0])
-        node_tree.links.new(mix_rgb.inputs[2], texture_nodes['AO'].outputs[0])
-        node_tree.links.new(bsdf_diffuse.inputs[0], mix_rgb.outputs[0])
-    else:
-        node_tree.links.new(bsdf_diffuse.inputs[0], texture_nodes['COL'].outputs[0])
-    
-    node_tree.links.new(bsdf_diffuse.outputs[0], mix_shader.inputs[1])
-    
-    # create glossy node
-    bsdf_glossy = node_tree.nodes.new('ShaderNodeBsdfGlossy')
-    node_tree.links.new(bsdf_glossy.inputs[1], texture_nodes['GLOSS'].outputs[0])
-    node_tree.links.new(bsdf_glossy.outputs[0], mix_shader.inputs[2])
-    
+    # create principled BSDF shader
+    bsdf_principled = node_tree.nodes.new('ShaderNodeBsdfPrincipled')
+
+    # connect color to bsdf principled
+    node_tree.links.new(texture_nodes['COL'].outputs[0],
+                        bsdf_principled.inputs[0])
+
+    # connect reflection to bsdf principled
+    node_tree.links.new(texture_nodes['REFL'].outputs[0],
+                        bsdf_principled.inputs[4])
+
+    # create invert node, connect glossy image and connect to bsdf principled
+    invert = node_tree.nodes.new('ShaderNodeInvert')
+    node_tree.links.new(texture_nodes['GLOSS'].outputs[0], invert.inputs[1])
+    node_tree.links.new(invert.outputs[0], bsdf_principled.inputs[7])
+
     # create normal map
     normal_map = node_tree.nodes.new('ShaderNodeNormalMap')
-    node_tree.links.new(normal_map.inputs[1], texture_nodes['NRM'].outputs[0])
-    node_tree.links.new(normal_map.outputs[0], bsdf_diffuse.inputs[2])
-    node_tree.links.new(normal_map.outputs[0], bsdf_glossy.inputs[2])
+    node_tree.links.new(texture_nodes['NRM'].outputs[0], normal_map.inputs[1])
+    node_tree.links.new(normal_map.outputs[0], bsdf_principled.inputs[16])
+
+    node_tree.links.new(bsdf_principled.outputs[0], out_node.inputs[0])
     
     auto_align_nodes(node_tree)
     return material
